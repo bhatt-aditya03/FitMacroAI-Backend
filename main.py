@@ -1,3 +1,4 @@
+from fastapi import FastAPI, HTTPException
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -38,6 +39,12 @@ def root():
 @app.post("/analyze-food", response_model=FoodResponse)
 async def analyze_food(request: FoodRequest):
     
+    if not request.food_description.strip():
+        raise HTTPException(status_code=400, detail="Food description cannot be empty")
+    
+    if len(request.food_description) > 200:
+        raise HTTPException(status_code=400, detail="Food description too long")
+    
     prompt = f"""
     Analyze this food and return ONLY a JSON object with nutritional info.
     
@@ -57,13 +64,19 @@ async def analyze_food(request: FoodRequest):
     Use standard Indian food nutrition data where applicable.
     """
     
-    response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.1
-    )
-    
-    text = response.choices[0].message.content.strip()
-    text = text.replace("```json", "").replace("```", "").strip()
-    data = json.loads(text)
-    return FoodResponse(**data)
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1
+        )
+        
+        text = response.choices[0].message.content.strip()
+        text = text.replace("```json", "").replace("```", "").strip()
+        data = json.loads(text)
+        return FoodResponse(**data)
+        
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail="AI returned invalid response, please try again")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="AI service unavailable, please try again later")
